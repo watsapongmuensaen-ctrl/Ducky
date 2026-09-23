@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ภารกิจนักสืบ NTM ไขปริศนา (The Ultimate Collection)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f0fdf4; touch-action: manipulation; user-select: none; }
+        .bounce-anim { animation: bounce 2s infinite; }
+        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .pop-anim { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        @keyframes pop { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        .slide-up { animation: slideUp 0.4s ease-out; }
+        @keyframes slideUp { 0% { transform: translateY(30px); opacity: 0; } 100% { transform: translateY(0); opacity: 1; } }
+        .shake-anim { animation: shake 0.5s; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        
+        /* Grid Styles */
+        .grid-board { display: grid; gap: 2px; background-color: #1f2937; border: 4px solid #1f2937; border-radius: 0.5rem; overflow: hidden; }
+        .grid-cell { background-color: white; display: flex; align-items: center; justify-content: center; aspect-ratio: 1 / 1; font-size: 2rem; cursor: pointer; transition: all 0.2s; font-weight: bold; width: 100%; height: 100%; }
+        @media (min-width: 640px) { .grid-cell { font-size: 2.5rem; } }
+        .border-r-thick { border-right: 4px solid #1f2937 !important; }
+        .border-b-thick { border-bottom: 4px solid #1f2937 !important; }
+
+        /* Maze Styles */
+        .maze-grid { display: grid; gap: 2px; background-color: #d1d5db; padding: 4px; border-radius: 0.5rem; border: 4px solid #9ca3af; }
+        .maze-cell { background-color: #f9fafb; aspect-ratio: 1/1; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; border-radius: 4px; transition: all 0.3s ease; }
+        .maze-cell.obstacle { background-color: #d97706; background-image: repeating-linear-gradient(45deg, transparent, transparent 10px, #b45309 10px, #b45309 20px); }
+        .maze-cell.path { background-color: #fef08a; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+        const shuffleArray = (arr) => [...arr].sort(() => Math.random() - 0.5);
+
+        const NTMMascot = ({ message, emotion = "🧑‍🎓", onHint, isWarning = false }) => (
+            <div className={`flex items-end space-x-3 sm:space-x-4 mb-6 pop-anim bg-white p-3 sm:p-5 rounded-3xl shadow-md border-4 w-full max-w-2xl mx-auto
+                ${isWarning ? 'border-red-400 bg-red-50' : 'border-yellow-300'}`}>
+                <div className="text-5xl sm:text-6xl bounce-anim drop-shadow-md">{emotion}</div>
+                <div className="flex-1">
+                    <p className={`text-sm sm:text-lg font-bold leading-tight ${isWarning ? 'text-red-700' : 'text-gray-700'}`}>{message}</p>
+                </div>
+                {onHint && (
+                    <button onClick={onHint} className="bg-yellow-400 hover:bg-yellow-500 text-yellow-900 px-3 py-2 sm:px-4 sm:py-3 rounded-full shadow-lg transition transform hover:scale-105 active:scale-95 text-xs sm:text-base font-black flex items-center gap-1">
+                        <span>💡</span> <span className="hidden sm:inline">คำใบ้</span>
+                    </button>
+                )}
+            </div>
+        );
+
+        const generateGridPuzzle = (size, difficultyLevel, isColorGame = false) => {
+            let baseGrid = [];
+            let symbols = [];
+            if (size === 4) {
+                baseGrid = [ [1, 2, 3, 4], [3, 4, 1, 2], [2, 3, 4, 1], [4, 1, 2, 3] ];
+                symbols = isColorGame ? ['🔴','🟢','🟡','🔵'] : [1, 2, 3, 4];
+                if(Math.random() > 0.5) { let temp = baseGrid[0]; baseGrid[0] = baseGrid[1]; baseGrid[1] = temp; }
+                if(Math.random() > 0.5) { let temp = baseGrid[2]; baseGrid[2] = baseGrid[3]; baseGrid[3] = temp; }
+            } else if (size === 6) {
+                baseGrid = [ [1,2,3, 4,5,6], [4,5,6, 1,2,3], [2,3,1, 5,6,4], [5,6,4, 2,3,1], [3,1,2, 6,4,5], [6,4,5, 3,1,2] ];
+                symbols = [1, 2, 3, 4, 5, 6];
+            }
+            const mapping = shuffleArray(symbols);
+            let solvedGrid = baseGrid.map(row => row.map(cell => mapping[(cell - 1) % symbols.length]));
+            let puzzleGrid = JSON.parse(JSON.stringify(solvedGrid));
+            let removeCount = size === 4 ? 4 + Math.floor(difficultyLevel / 3.5) : 12 + Math.floor((difficultyLevel - 10) * 1.2);
+            let cells = [];
+            for(let r=0; r<size; r++) for(let c=0; c<size; c++) cells.push({r,c});
+            cells = shuffleArray(cells);
+            for(let i=0; i<removeCount; i++) puzzleGrid[cells[i].r][cells[i].c] = null;
+            return { puzzle: puzzleGrid, solution: solvedGrid, symbols: mapping.sort() };
+        };
+
+        const GridGame = ({ level, isColorGame, onWin }) => {
+            const size = level <= 10 && !isColorGame ? 4 : isColorGame ? 4 : 6;
+            const { puzzle, solution, symbols } = useMemo(() => generateGridPuzzle(size, level, isColorGame), [level, size, isColorGame]);
+            const [grid, setGrid] = useState(puzzle);
+            const [selectedCell, setSelectedCell] = useState(null);
+            const [message, setMessage] = useState(`ด่านที่ ${level}: เติม${isColorGame ? 'สี' : 'ตัวเลข'}ให้เต็มช่อง โดยห้ามซ้ำกันในแนวนอน แนวตั้ง และในกรอบ`);
+            const [emotion, setEmotion] = useState("🧑‍🎓📝");
+
+            useEffect(() => { setGrid(JSON.parse(JSON.stringify(puzzle))); setSelectedCell(null); }, [puzzle]);
+
+            const handleInput = (val) => {
+                if (!selectedCell) return;
+                const newGrid = [...grid];
+                newGrid[selectedCell.r][selectedCell.c] = val === grid[selectedCell.r][selectedCell.c] ? null : val;
+                setGrid(newGrid);
+                let isFull = true, isValid = true;
+                for (let r=0; r<size; r++) for (let c=0; c<size; c++) if (newGrid[r][c] === null) isFull = false;
+
+                if (isFull) {
+                    const checkSet = (arr) => new Set(arr).size === arr.length;
+                    for (let i = 0; i < size; i++) {
+                        if (!checkSet(newGrid[i])) isValid = false;
+                        let col = [];
+                        for (let j = 0; j < size; j++) col.push(newGrid[j][i]);
+                        if (!checkSet(col)) isValid = false;
+                    }
+                    const bR = size === 4 ? 2 : 2, bC = size === 4 ? 2 : 3;
+                    for (let r = 0; r < size; r += bR) {
+                        for (let c = 0; c < size; c += bC) {
+                            let block = [];
+                            for (let ir = 0; ir < bR; ir++) for (let ic = 0; ic < bC; ic++) block.push(newGrid[r + ir][c + ic]);
+                            if (!checkSet(block)) isValid = false;
+                        }
+                    }
+                    if (isValid) { setMessage("ยอดเยี่ยม! ตรรกะของหนูเป๊ะมาก ประตูเปิดแล้ว!"); setEmotion("🧑‍🎓✨"); setTimeout(onWin, 1500); } 
+                    else { setMessage("อ๊ะ! มีบางช่องที่ซ้ำกันอยู่นะ ลองเช็คแนวนอน แนวตั้ง และในกรอบดูอีกที"); setEmotion("🧑‍🎓🔍"); }
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-md mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} />
+                    <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-xl w-full flex flex-col items-center border-b-4 border-gray-200">
+                        <div className={`grid-board w-full ${size === 4 ? 'grid-cols-4' : 'grid-cols-6'}`}>
+                            {grid.map((row, r) => row.map((cell, c) => {
+                                const isFixed = puzzle[r][c] !== null;
+                                let borderClass = "";
+                                if (size === 4) { if (c === 1) borderClass += " border-r-thick"; if (r === 1) borderClass += " border-b-thick"; }
+                                else { if (c === 2) borderClass += " border-r-thick"; if (r === 1 || r === 3) borderClass += " border-b-thick"; }
+                                return (
+                                    <div key={`${r}-${c}`} onClick={() => !isFixed && setSelectedCell({r, c})}
+                                        className={`grid-cell ${isFixed ? 'bg-gray-200 text-gray-800' : 'text-blue-600 hover:bg-blue-50'} 
+                                        ${selectedCell?.r === r && selectedCell?.c === c ? 'bg-yellow-200 ring-4 ring-inset ring-yellow-500 z-10' : ''} ${borderClass}`}>
+                                        {cell}
+                                    </div>
+                                )
+                            }))}
+                        </div>
+                        <div className="mt-6 w-full flex flex-wrap justify-center gap-2 bg-gray-50 p-3 rounded-2xl shadow-inner border-2 border-gray-100">
+                            {symbols.map(sym => (
+                                <button key={sym} onClick={() => handleInput(sym)} className="w-12 h-12 sm:w-14 sm:h-14 bg-white rounded-xl shadow border-b-4 border-gray-300 text-2xl font-bold hover:bg-blue-50 active:translate-y-1 active:border-b-0 transition-all flex items-center justify-center text-blue-600">{sym}</button>
+                            ))}
+                            <button onClick={() => handleInput(null)} className="w-12 h-12 sm:w-14 sm:h-14 bg-red-50 text-red-500 rounded-xl shadow border-b-4 border-red-200 text-sm font-bold hover:bg-red-100 active:translate-y-1 active:border-b-0 transition-all flex items-center justify-center">ลบ</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const generateDeduction = (level) => {
+            const numSuspects = level <= 4 ? 4 : level <= 8 ? 6 : level <= 14 ? 8 : 10;
+            const namesBoy = ["บอล","กร","บาส","กล้า","นนท์","เต้","พายุ","กาย","เคน","โอม"];
+            const namesGirl = ["แพรว","ฟ้า","มายด์","พลอย","แก้ว","พิม","เจน","รุ้ง","น้ำ","เบล"];
+            const colors = ["red", "blue", "green", "yellow", "purple"];
+            const colorNames = {red:"แดง", blue:"ฟ้า", green:"เขียว", yellow:"เหลือง", purple:"ม่วง"};
+            const useGlasses = level >= 3, useHat = level >= 6, useBag = level >= 10, usePet = level >= 14, allowNegative = level >= 11;
+            let targetNumClues = level <= 5 ? 3 : level <= 12 ? 4 : 5;
+
+            for (let attempt = 0; attempt < 500; attempt++) {
+                let pool = [], usedNames = new Set();
+                while(pool.length < numSuspects) {
+                    const isBoy = Math.random() > 0.5;
+                    let availableNames = isBoy ? namesBoy.filter(n => !usedNames.has(n)) : namesGirl.filter(n => !usedNames.has(n));
+                    if(availableNames.length === 0) break; 
+                    const name = availableNames[randomInt(0, availableNames.length-1)];
+                    const color = colors[randomInt(0, level > 10 ? 4 : 3)];
+                    const hasGlasses = useGlasses ? Math.random() > 0.5 : false;
+                    const hasHat = useHat ? Math.random() > 0.5 : false;
+                    const hasBag = useBag ? Math.random() > 0.5 : false;
+                    const hasPet = usePet ? Math.random() > 0.5 : false;
+
+                    if(!pool.some(p => p.isBoy===isBoy && p.color===color && p.hasGlasses===hasGlasses && p.hasHat===hasHat && p.hasBag===hasBag && p.hasPet===hasPet)) {
+                        usedNames.add(name);
+                        pool.push({ id: pool.length + 1, name, isBoy, color, hasGlasses, hasHat, hasBag, hasPet, eliminated: false });
+                    }
+                }
+                if(pool.length < numSuspects) continue;
+                const culprit = pool[randomInt(0, pool.length-1)];
+                let allClues = [];
+                
+                allClues.push({ type: 'gender', text: `รอยเท้ายืนยันว่าเป็น ${culprit.isBoy ? 'เด็กผู้ชาย👦' : 'เด็กผู้หญิง👧'}`, filter: s => s.isBoy === culprit.isBoy });
+                if(allowNegative) allClues.push({ type: 'gender_neg', text: `คนร้ายไม่ใช่ ${!culprit.isBoy ? 'เด็กผู้ชาย👦' : 'เด็กผู้หญิง👧'} แน่นอน`, filter: s => s.isBoy === culprit.isBoy });
+                allClues.push({ type: 'color', text: `มีคนเห็นว่าคนร้ายใส่เสื้อสี${colorNames[culprit.color]} 👕`, filter: s => s.color === culprit.color });
+                if(allowNegative) {
+                    let otherColors = [...new Set(pool.map(p => p.color))].filter(c => c !== culprit.color);
+                    otherColors.forEach(c => allClues.push({ type: 'color_neg', text: `คนร้ายไม่ได้ใส่เสื้อสี${colorNames[c]} ❌`, filter: s => s.color !== c }));
+                }
+                if(useGlasses) allClues.push({ type: 'glasses', text: `คนร้าย${culprit.hasGlasses ? 'ทำแว่นตาตกไว้ 👓' : 'ไม่ได้ใส่แว่นตา ❌👓'}`, filter: s => s.hasGlasses === culprit.hasGlasses });
+                if(useHat) allClues.push({ type: 'hat', text: `พยานจำได้ว่าคนร้าย${culprit.hasHat ? 'ใส่หมวก🧢' : 'ไม่ได้ใส่หมวก ❌🧢'}`, filter: s => s.hasHat === culprit.hasHat });
+                if(useBag) allClues.push({ type: 'bag', text: `คนร้าย${culprit.hasBag ? 'สะพายกระเป๋าเป้🎒มาด้วย' : 'มาตัวเปล่าไม่มีกระเป๋า ❌🎒'}`, filter: s => s.hasBag === culprit.hasBag });
+                if(usePet) allClues.push({ type: 'pet', text: `พบรอยเท้าเล็กๆ! คนร้าย${culprit.hasPet ? 'พาสุนัข🐕มาด้วย' : 'ไม่ได้พาสัตว์เลี้ยงมา ❌🐕'}`, filter: s => s.hasPet === culprit.hasPet });
+
+                allClues = shuffleArray(allClues);
+                let selectedClues = [], currentCandidates = [...pool], usedTypes = new Set();
+                
+                for (let clue of allClues) {
+                    let baseType = clue.type.split('_')[0];
+                    if(usedTypes.has(baseType)) continue;
+                    let nextCandidates = currentCandidates.filter(clue.filter);
+                    if(nextCandidates.length < currentCandidates.length) {
+                        selectedClues.push(clue.text); currentCandidates = nextCandidates; usedTypes.add(baseType);
+                    }
+                    if(currentCandidates.length === 1) break;
+                }
+
+                if (currentCandidates.length === 1 && currentCandidates[0].id === culprit.id) {
+                    if (selectedClues.length >= targetNumClues - 1 && selectedClues.length <= targetNumClues + 1) {
+                        return { suspects: pool, clues: selectedClues, culprit, colorNames };
+                    }
+                }
+            }
+            return generateDeduction(level <= 1 ? 1 : level - 1);
+        };
+
+        const DeductionGame = ({ level, onWin }) => {
+            const { suspects: initialSuspects, clues, culprit, colorNames } = useMemo(() => generateDeduction(level), [level]);
+            const [suspects, setSuspects] = useState(initialSuspects);
+            const [clueIndex, setClueIndex] = useState(0);
+            const [message, setMessage] = useState(`ด่านที่ ${level}: กด "ขอเบาะแส" เพื่อวิเคราะห์ และคลิก ❌ ตัดคนที่ไม่ใช่ออก!`);
+            const [emotion, setEmotion] = useState("🧑‍🎓🔎");
+            const [isWin, setIsWin] = useState(false);
+
+            useEffect(() => {
+                setSuspects(initialSuspects); setClueIndex(0); setIsWin(false);
+                setMessage(`ด่านที่ ${level}: กด "ขอเบาะแส" เพื่อวิเคราะห์ และคลิก ❌ ตัดคนที่ไม่ใช่ออก!`); setEmotion("🧑‍🎓🔎");
+            }, [initialSuspects, level]);
+
+            const toggleEliminate = (id) => {
+                if (isWin) return;
+                const newSuspects = suspects.map(s => s.id === id ? { ...s, eliminated: !s.eliminated } : s);
+                setSuspects(newSuspects);
+            };
+
+            const handleSubmit = () => {
+                if (isWin) return;
+                const active = suspects.filter(s => !s.eliminated);
+                if (active.length > 1) { setMessage(`ยังมีผู้ต้องสงสัยตั้ง ${active.length} คน! ตัดให้เหลือคนร้ายเพียง 1 คนก่อนนะ`); setEmotion("🧑‍🎓📋"); }
+                else if (active.length === 0) { setMessage("ตัดออกหมดเลย! เอาคนที่ไม่ใช่ออกแล้วเหลือคนร้ายไว้ 1 คนนะ"); setEmotion("🧑‍🎓💦"); }
+                else {
+                    if (active[0].id === culprit.id) {
+                        setMessage(`ยอดเยี่ยม! คนร้ายคือ "${active[0].name}" นี่เอง! วิเคราะห์ตรรกะเก่งมาก`); setEmotion("🧑‍🎓🎉"); setIsWin(true); setTimeout(onWin, 2500);
+                    } else { setMessage(`เอ๊ะ... "${active[0].name}" ไม่น่าใช่คนร้ายนะ ลองดูเบาะแสดีๆ สิ`); setEmotion("🧑‍🎓❌"); }
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-4xl mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} />
+                    <div className="mb-6 w-full flex flex-col items-center">
+                        <div className="flex gap-3 justify-center w-full px-2">
+                            <button onClick={() => { if(clueIndex < clues.length) setClueIndex(clueIndex + 1); }} disabled={clueIndex >= clues.length || isWin}
+                                className={`px-4 sm:px-6 py-2 sm:py-3 rounded-full font-bold text-white shadow-lg text-sm sm:text-lg transition transform active:scale-95 flex-1 max-w-[200px]
+                                ${clueIndex >= clues.length ? 'bg-gray-400' : 'bg-purple-600 hover:bg-purple-700 animate-pulse'}`}>
+                                {clueIndex >= clues.length ? "เบาะแสหมดแล้ว" : `🔍 ขอเบาะแส (${clueIndex}/${clues.length})`}
+                            </button>
+                            <button onClick={handleSubmit} disabled={isWin} className="px-4 sm:px-6 py-2 sm:py-3 rounded-full font-bold text-white shadow-lg text-sm sm:text-lg transition transform active:scale-95 bg-green-500 hover:bg-green-600 flex-1 max-w-[200px]">
+                                🚨 ส่งคำตอบ!
+                            </button>
+                        </div>
+                        <div className="mt-4 w-full max-w-2xl bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm min-h-[80px]">
+                            <ul className="list-disc list-inside text-gray-700 text-sm sm:text-base space-y-2 font-medium">
+                                {clues.slice(0, clueIndex).map((clue, i) => <li key={i} className="slide-up">{clue}</li>)}
+                                {clueIndex === 0 && <span className="text-gray-400 italic">...รอการเปิดเบาะแส...</span>}
+                            </ul>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3 w-full px-2">
+                        {suspects.map(s => {
+                            const colorClass = { red: "bg-red-50 text-red-900 border-red-300 ring-red-200", blue: "bg-blue-50 text-blue-900 border-blue-300 ring-blue-200", green: "bg-green-50 text-green-900 border-green-300 ring-green-200", yellow: "bg-yellow-50 text-yellow-900 border-yellow-300 ring-yellow-200", purple: "bg-purple-50 text-purple-900 border-purple-300 ring-purple-200" }[s.color];
+                            return (
+                                <div key={s.id} onClick={() => toggleEliminate(s.id)}
+                                    className={`relative rounded-2xl p-3 flex flex-col items-center text-center cursor-pointer shadow-sm border-2 transition-all transform active:scale-95
+                                    ${s.eliminated ? 'bg-gray-100 opacity-40 grayscale border-gray-200' : `bg-white hover:-translate-y-1 hover:shadow-md border-gray-300`}`}>
+                                    <div className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-full flex items-center justify-center border-4 mb-2 transition-colors ${s.eliminated ? 'border-gray-200 bg-gray-50' : colorClass}`}>
+                                        <span className="text-4xl sm:text-5xl">{s.isBoy ? '👦' : '👧'}</span>
+                                        {s.hasGlasses && <span className="absolute top-0 right-[-4px] text-xl drop-shadow-md">👓</span>}
+                                        {s.hasHat && <span className="absolute -top-3 left-1/2 transform -translate-x-1/2 text-2xl drop-shadow-md">🧢</span>}
+                                        {s.hasBag && <span className="absolute bottom-[-6px] right-[-4px] text-xl drop-shadow-md">🎒</span>}
+                                        {s.hasPet && <span className="absolute bottom-[-6px] left-[-4px] text-xl drop-shadow-md">🐕</span>}
+                                    </div>
+                                    <h3 className="font-bold text-sm sm:text-base text-gray-800 leading-tight">{s.name}</h3>
+                                    <span className={`text-[10px] sm:text-xs px-2 py-0.5 rounded-full mt-1 font-semibold border ${s.eliminated ? 'bg-gray-100 text-gray-500' : colorClass}`}>สี{colorNames[s.color]}</span>
+                                    {s.eliminated && <div className="absolute inset-0 flex items-center justify-center z-20"><span className="text-6xl text-red-500 font-bold drop-shadow-lg transform -rotate-12">❌</span></div>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        const generatePattern = (level) => {
+            const pools = [ ['🔴', '🟦', '🔺', '🟨'], ['🐶', '🐱', '🐭', '🐰'], ['🍎', '🍌', '🍉', '🍇'], ['🚗', '🚕', '🚙', '🚌'] ];
+            const pool = pools[randomInt(0, pools.length-1)];
+            let pattern = [], pType = 0;
+            if (level <= 5) pType = randomInt(0, 1); else if (level <= 12) pType = randomInt(1, 3); else pType = randomInt(2, 4);
+            switch(pType) {
+                case 0: pattern = [pool[0], pool[1], pool[0], pool[1], pool[0], pool[1]]; break;
+                case 1: pattern = [pool[0], pool[0], pool[1], pool[1], pool[0], pool[0], pool[1], pool[1]]; break;
+                case 2: pattern = [pool[0], pool[1], pool[2], pool[0], pool[1], pool[2], pool[0], pool[1]]; break;
+                case 3: pattern = [pool[0], pool[1], pool[0], pool[2], pool[0], pool[1], pool[0], pool[2]]; break;
+                case 4: pattern = [pool[0], pool[1], pool[2], pool[3], pool[0], pool[1], pool[2], pool[3]]; break;
+            }
+            const missingIndex = randomInt(pattern.length - 3, pattern.length - 1);
+            const answer = pattern[missingIndex];
+            let choices = [answer];
+            while(choices.length < 4) { const wrong = pool[randomInt(0, pool.length-1)]; if(!choices.includes(wrong)) choices.push(wrong); }
+            return { fullPattern: pattern, missingIndex, answer, choices: shuffleArray(choices) };
+        };
+
+        const PatternGame = ({ level, onWin }) => {
+            const { fullPattern, missingIndex, answer, choices } = useMemo(() => generatePattern(level), [level]);
+            const [selected, setSelected] = useState(null);
+            const [message, setMessage] = useState(`ด่านที่ ${level}: สังเกตรูปแบบความสัมพันธ์ แล้วเลือกภาพที่หายไปให้ถูกต้อง!`);
+            const [emotion, setEmotion] = useState("🧑‍🎓🧠");
+
+            const handleSelect = (choice) => {
+                setSelected(choice);
+                if(choice === answer) { setMessage("ถูกต้อง! มองรูปแบบอนุกรมได้เฉียบขาดมาก!"); setEmotion("🧑‍🎓🌟"); setTimeout(onWin, 1500); }
+                else { setMessage("ยังไม่ใช่นะ ลองดูซ้ำๆ ว่าภาพมันเรียงกันด้วยกฎอะไร?"); setEmotion("🧑‍🎓🤔"); setTimeout(() => setSelected(null), 1000); }
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-3xl mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} />
+                    <div className="bg-white p-4 sm:p-6 rounded-3xl shadow-lg border-4 border-blue-200 w-full mb-8 flex flex-wrap justify-center items-center gap-2 sm:gap-4 min-h-[120px]">
+                        {fullPattern.map((item, idx) => (
+                            <div key={idx} className="flex flex-col items-center">
+                                {idx === missingIndex ? (
+                                    <div className={`w-14 h-14 sm:w-20 sm:h-20 rounded-2xl border-4 border-dashed border-gray-400 flex items-center justify-center text-3xl sm:text-5xl bg-gray-50 ${selected ? 'scale-110 border-blue-500 bg-blue-50' : ''}`}>
+                                        {selected || '?'}
+                                    </div>
+                                ) : <div className="w-14 h-14 sm:w-20 sm:h-20 flex items-center justify-center text-3xl sm:text-5xl drop-shadow-md">{item}</div>}
+                            </div>
+                        ))}
+                    </div>
+                    <h3 className="text-lg font-bold text-gray-700 mb-3">ตัวเลือก:</h3>
+                    <div className="flex gap-3 sm:gap-4">
+                        {choices.map((choice, idx) => (
+                            <button key={idx} onClick={() => handleSelect(choice)} disabled={selected !== null}
+                                className="w-16 h-16 sm:w-20 sm:h-20 bg-white rounded-2xl shadow-md border-b-4 border-gray-300 flex items-center justify-center text-4xl sm:text-5xl hover:bg-gray-50 hover:-translate-y-1 active:translate-y-0 active:border-b-0 disabled:opacity-50 transition-all">
+                                {choice}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        const generateMaze = (level) => {
+            const size = Math.min(4 + Math.floor((level - 1) / 5), 7);
+            let grid = Array(size).fill(0).map(() => Array(size).fill('empty'));
+            let start = { r: 0, c: 0 }, end = { r: size - 1, c: size - 1 };
+            
+            let curr = { ...start };
+            grid[curr.r][curr.c] = 'path';
+            while (curr.r < end.r || curr.c < end.c) {
+                if (curr.r === end.r) curr.c++;
+                else if (curr.c === end.c) curr.r++;
+                else { Math.random() > 0.5 ? curr.r++ : curr.c++; }
+                grid[curr.r][curr.c] = 'path';
+            }
+            
+            let obsCount = Math.floor(size * size * 0.25), placed = 0;
+            while(placed < obsCount) {
+                let r = randomInt(0, size-1), c = randomInt(0, size-1);
+                if (grid[r][c] === 'empty') { grid[r][c] = 'obstacle'; placed++; }
+            }
+            return { size, grid, start, end };
+        };
+
+        const MazeGame = ({ level, onWin }) => {
+            const { size, grid, start, end } = useMemo(() => generateMaze(level), [level]);
+            const [playerPos, setPlayerPos] = useState({ ...start });
+            const [commands, setCommands] = useState([]);
+            const [isRunning, setIsRunning] = useState(false);
+            const [message, setMessage] = useState(`ด่านที่ ${level}: เรียงคำสั่งพานักสืบ NTM 🧑‍🎓 ไปหยิบตะกร้า 🧺 โดยไม่ชนสิ่งกีดขวาง!`);
+            const [emotion, setEmotion] = useState("🧑‍🎓🗺️");
+
+            useEffect(() => {
+                setPlayerPos({ ...start }); setCommands([]); setIsRunning(false);
+                setMessage(`ด่านที่ ${level}: เรียงคำสั่งพานักสืบ NTM 🧑‍🎓 ไปหยิบตะกร้า 🧺 โดยไม่ชนสิ่งกีดขวาง!`); setEmotion("🧑‍🎓🗺️");
+            }, [level, start]);
+
+            const addCommand = (cmd) => { if (!isRunning && commands.length < 15) setCommands([...commands, cmd]); };
+            const removeCommand = (index) => { if (!isRunning) setCommands(commands.filter((_, i) => i !== index)); };
+            const resetMaze = () => { if (!isRunning) { setPlayerPos({ ...start }); setCommands([]); setMessage("ตั้งโปรแกรมใหม่เลย!"); setEmotion("🧑‍🎓🔧"); }};
+
+            const runCommands = async () => {
+                if (commands.length === 0 || isRunning) return;
+                setIsRunning(true);
+                let currentPos = { ...start };
+                setPlayerPos(currentPos);
+                
+                for (let i = 0; i < commands.length; i++) {
+                    setMessage(`กำลังรันคำสั่งที่ ${i+1}...`); setEmotion("🧑‍🎓⏳");
+                    await new Promise(res => setTimeout(res, 400));
+                    
+                    let nextPos = { ...currentPos };
+                    if (commands[i] === 'UP') nextPos.r--;
+                    if (commands[i] === 'DOWN') nextPos.r++;
+                    if (commands[i] === 'LEFT') nextPos.c--;
+                    if (commands[i] === 'RIGHT') nextPos.c++;
+
+                    if (nextPos.r < 0 || nextPos.r >= size || nextPos.c < 0 || nextPos.c >= size) {
+                        setMessage("โอ๊ย! ชนกำแพงแล้ว! อัลกอริทึมยังไม่ถูกนะ ลองใหม่"); setEmotion("🧑‍🎓💥"); setIsRunning(false); return;
+                    }
+                    if (grid[nextPos.r][nextPos.c] === 'obstacle') {
+                        setMessage("โอ๊ะ! ติดสิ่งกีดขวาง! ลำดับคำสั่งผิดพลาด ลองใหม่นะ"); setEmotion("🧑‍🎓🚫"); setIsRunning(false); return;
+                    }
+
+                    currentPos = nextPos;
+                    setPlayerPos(currentPos);
+
+                    if (currentPos.r === end.r && currentPos.c === end.c) {
+                        setMessage("เย้! ถึงเป้าหมายแล้ว อัลกอริทึมสมบูรณ์แบบ!"); setEmotion("🧑‍🎓🎉"); setTimeout(onWin, 2000); return;
+                    }
+                }
+                setMessage("เดินหมดคำสั่งแล้วแต่ยังไม่ถึงเป้าหมายเลย เพิ่มคำสั่งอีกนิดนะ"); setEmotion("🧑‍🎓💦"); setIsRunning(false);
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-2xl mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} />
+                    <div className="flex flex-col md:flex-row gap-6 w-full">
+                        <div className="bg-white p-4 rounded-3xl shadow-lg border-2 border-gray-200 flex-1 flex justify-center items-center">
+                            <div className="maze-grid w-full max-w-[300px]" style={{ gridTemplateColumns: `repeat(${size}, 1fr)` }}>
+                                {grid.map((row, r) => row.map((cell, c) => {
+                                    let isPlayer = playerPos.r === r && playerPos.c === c;
+                                    let isEnd = end.r === r && end.c === c;
+                                    return (
+                                        <div key={`${r}-${c}`} className={`maze-cell ${cell === 'obstacle' ? 'obstacle' : ''}`}>
+                                            {isPlayer ? <span className="text-2xl sm:text-3xl bounce-anim drop-shadow-md z-10">🧑‍🎓</span> : isEnd ? <span className="text-2xl sm:text-3xl">🧺</span> : ''}
+                                        </div>
+                                    )
+                                }))}
+                            </div>
+                        </div>
+                        <div className="bg-emerald-50 p-4 rounded-3xl shadow-inner border-2 border-emerald-100 flex-1 flex flex-col">
+                            <h3 className="font-bold text-emerald-800 mb-2">กล่องอัลกอริทึม ({commands.length}/15)</h3>
+                            <div className="flex flex-wrap gap-2 mb-4 min-h-[60px] bg-white p-2 rounded-xl border border-gray-200">
+                                {commands.map((cmd, i) => (
+                                    <div key={i} onClick={() => removeCommand(i)} className="bg-emerald-500 text-white px-3 py-1 rounded-lg font-bold cursor-pointer hover:bg-red-500 hover:line-through transition-colors shadow-sm">
+                                        {cmd === 'UP' ? '⬆️' : cmd === 'DOWN' ? '⬇️' : cmd === 'LEFT' ? '⬅️' : '➡️'}
+                                    </div>
+                                ))}
+                                {commands.length === 0 && <span className="text-gray-400 text-sm italic m-1">คลิกปุ่มเพื่อเพิ่มคำสั่ง...</span>}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 w-full max-w-[200px] mx-auto mb-4">
+                                <div/>
+                                <button disabled={isRunning} onClick={() => addCommand('UP')} className="bg-white border-b-4 border-gray-300 rounded-xl p-2 text-2xl hover:bg-gray-50 active:translate-y-1 active:border-b-0 disabled:opacity-50">⬆️</button>
+                                <div/>
+                                <button disabled={isRunning} onClick={() => addCommand('LEFT')} className="bg-white border-b-4 border-gray-300 rounded-xl p-2 text-2xl hover:bg-gray-50 active:translate-y-1 active:border-b-0 disabled:opacity-50">⬅️</button>
+                                <button disabled={isRunning} onClick={() => addCommand('DOWN')} className="bg-white border-b-4 border-gray-300 rounded-xl p-2 text-2xl hover:bg-gray-50 active:translate-y-1 active:border-b-0 disabled:opacity-50">⬇️</button>
+                                <button disabled={isRunning} onClick={() => addCommand('RIGHT')} className="bg-white border-b-4 border-gray-300 rounded-xl p-2 text-2xl hover:bg-gray-50 active:translate-y-1 active:border-b-0 disabled:opacity-50">➡️</button>
+                            </div>
+                            <div className="flex gap-2 mt-auto">
+                                <button disabled={isRunning} onClick={resetMaze} className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl font-bold hover:bg-gray-300 transition disabled:opacity-50">ล้างคำสั่ง</button>
+                                <button disabled={isRunning || commands.length===0} onClick={runCommands} className="flex-1 bg-green-500 text-white py-2 rounded-xl font-bold hover:bg-green-600 transition shadow-md disabled:opacity-50">▶️ รันโปรแกรม</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const generateWeightPuzzle = (level) => {
+            const fruits = shuffleArray(['🍎', '🍌', '🍊', '🍉', '🍓', '🍇', '🍍', '🍈']).slice(0, 3);
+            const [f1, f2, f3] = fruits;
+            const w1 = randomInt(1, 10) * 10;
+            const w2 = randomInt(1, 10) * 10;
+            const w3 = randomInt(1, 10) * 10;
+
+            let hints = [];
+            let question = {};
+            let answer = 0;
+
+            if (level <= 6) {
+                const type = randomInt(1, 3);
+                if (type === 1) {
+                    hints.push({ left: [f1, '+', f1], right: w1 * 2 });
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    question = { left: [f2] };
+                    answer = w2;
+                } else if (type === 2) {
+                    hints.push({ left: [f1], right: w1 });
+                    hints.push({ left: [f2, '+', f2], right: w2 * 2 });
+                    question = { left: [f1, '+', f2] };
+                    answer = w1 + w2;
+                } else {
+                    hints.push({ left: [f1, '+', f1], right: w1 * 2 });
+                    hints.push({ left: [f1, '+', f1, '+', f2], right: w1 * 2 + w2 });
+                    question = { left: [f2] };
+                    answer = w2;
+                }
+            } else if (level <= 13) {
+                const type = randomInt(1, 3);
+                if (type === 1) {
+                    hints.push({ left: [f1, '+', f1, '+', f1], right: w1 * 3 });
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    hints.push({ left: [f2, '+', f3], right: w2 + w3 });
+                    question = { left: [f3] };
+                    answer = w3;
+                } else if (type === 2) {
+                    hints.push({ left: [f2, '+', f2], right: w2 * 2 });
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    hints.push({ left: [f1, '+', f3], right: w1 + w3 });
+                    question = { left: [f3, '+', f3] };
+                    answer = w3 * 2;
+                } else {
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    hints.push({ left: [f1, '+', f1], right: w1 * 2 });
+                    hints.push({ left: [f2, '+', f3, '+', f3], right: w2 + w3 * 2 });
+                    question = { left: [f3] };
+                    answer = w3;
+                }
+            } else {
+                const type = randomInt(1, 4);
+                if (type === 1) {
+                    hints.push({ left: [f1, '+', f1], right: w1 * 2 });
+                    hints.push({ left: [f1, '+', f2, '+', f2], right: w1 + w2 * 2 });
+                    hints.push({ left: [f1, '+', f2, '+', f3], right: w1 + w2 + w3 });
+                    question = { left: [f3] };
+                    answer = w3;
+                } else if (type === 2) {
+                    hints.push({ left: [f2, '+', f2, '+', f2], right: w2 * 3 });
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    hints.push({ left: [f1, '+', f3], right: w1 + w3 });
+                    question = { left: [f1, '+', f2, '+', f3] };
+                    answer = w1 + w2 + w3;
+                } else if (type === 3) {
+                    hints.push({ left: [f1, '+', f2, '+', f3], right: w1 + w2 + w3 });
+                    hints.push({ left: [f2, '+', f3], right: w2 + w3 });
+                    hints.push({ left: [f2, '+', f2], right: w2 * 2 });
+                    question = { left: [f1, '+', f3] };
+                    answer = w1 + w3;
+                } else {
+                    hints.push({ left: [f1, '+', f2], right: w1 + w2 });
+                    hints.push({ left: [f1, '+', f3], right: w1 + w3 });
+                    hints.push({ left: [f1, '+', f1], right: w1 * 2 });
+                    question = { left: [f2, '+', f3] };
+                    answer = w2 + w3;
+                }
+            }
+            return { hints, question, answer };
+        };
+
+        const WeightGame = ({ level, onWin }) => {
+            const { hints, question, answer } = useMemo(() => generateWeightPuzzle(level), [level]);
+            const [userInput, setUserInput] = useState("");
+            const [message, setMessage] = useState(`ด่านที่ ${level}: สังเกตน้ำหนักของผลไม้ แล้วทายสิว่าบรรทัดล่างสุดคือเท่าไหร่?`);
+            const [emotion, setEmotion] = useState("🧑‍🎓⚖️");
+            const [isWin, setIsWin] = useState(false);
+
+            useEffect(() => {
+                setUserInput(""); setIsWin(false);
+                setMessage(`ด่านที่ ${level}: สังเกตน้ำหนักของผลไม้ แล้วทายสิว่าบรรทัดล่างสุดคือเท่าไหร่?`); setEmotion("🧑‍🎓⚖️");
+            }, [level, hints]);
+
+            const handleType = (num) => {
+                if (isWin || userInput.length >= 4) return;
+                setUserInput(prev => prev + num);
+            };
+
+            const handleDelete = () => {
+                if (isWin) return;
+                setUserInput(prev => prev.slice(0, -1));
+            };
+
+            const handleSubmit = () => {
+                if (isWin) return;
+                if (userInput === "") {
+                    setMessage("หนูยังไม่ได้ใส่คำตอบเลยนะ!"); setEmotion("🧑‍🎓💦"); return;
+                }
+                if (parseInt(userInput) === answer) {
+                    setMessage("ถูกต้อง! คิดเลขและวิเคราะห์เก่งมากเลย!"); setEmotion("🧑‍🎓🎉"); setIsWin(true); setTimeout(onWin, 2000);
+                } else {
+                    setMessage("เอ๊ะ... น้ำหนักยังไม่ถูกนะ ลองวิเคราะห์จากบรรทัดบนๆ มาแทนค่าดูใหม่สิ"); setEmotion("🧑‍🎓🤔"); setUserInput("");
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-2xl mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} />
+                    
+                    <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-xl border-4 border-teal-300 w-full mb-6 flex flex-col items-center">
+                        <div className="w-full bg-teal-50 p-4 rounded-2xl mb-6 border-2 border-teal-100">
+                            {hints.map((hint, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-3xl sm:text-4xl mb-4 pb-4 border-b border-teal-200 last:border-0 last:pb-0 last:mb-0">
+                                    <div className="flex gap-2 items-center">
+                                        {hint.left.map((item, i) => <span key={i} className={item==='+'?'text-gray-400 text-2xl mx-1':''}>{item}</span>)}
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-gray-500 font-bold">=</span>
+                                        <span className="font-black text-teal-700">{hint.right} <span className="text-lg text-teal-600 font-medium">กรัม</span></span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex justify-between items-center text-4xl sm:text-5xl bg-yellow-50 p-4 rounded-2xl w-full border-2 border-yellow-200 mb-6">
+                            <div className="flex gap-2 items-center drop-shadow-md">
+                                {question.left.map((item, i) => <span key={i} className={item==='+'?'text-gray-400 text-3xl mx-1':''}>{item}</span>)}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-gray-500 font-bold">=</span>
+                                <div className={`min-w-[80px] h-[60px] border-b-4 border-gray-400 flex items-center justify-center font-black text-blue-600 ${userInput ? '' : 'text-gray-300'}`}>
+                                    {userInput || '?'}
+                                </div>
+                                <span className="text-xl text-gray-600 font-bold">กรัม</span>
+                            </div>
+                        </div>
+
+                        <div className="w-full max-w-[320px]">
+                            <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-2">
+                                {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+                                    <button key={num} onClick={() => handleType(num.toString())} className="bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-2xl font-bold py-3 rounded-xl shadow-sm border border-gray-300 transition-colors">{num}</button>
+                                ))}
+                                <button onClick={handleDelete} className="bg-red-100 hover:bg-red-200 active:bg-red-300 text-red-600 text-xl font-bold py-3 rounded-xl shadow-sm border border-red-300 transition-colors">ลบ</button>
+                                <button onClick={() => handleType('0')} className="bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-2xl font-bold py-3 rounded-xl shadow-sm border border-gray-300 transition-colors">0</button>
+                                <button onClick={handleSubmit} className="bg-green-500 hover:bg-green-600 active:bg-green-700 text-white text-xl font-bold py-3 rounded-xl shadow-sm border border-green-600 transition-colors">ตอบ</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const RiverCrossingGame = ({ onWin }) => {
+            const [leftBank, setLeftBank] = useState(['🐺 หมาป่า', '🐑 แกะ', '🥬 กะหล่ำปลี']);
+            const [rightBank, setRightBank] = useState([]);
+            const [boat, setBoat] = useState(null);
+            const [boatPos, setBoatPos] = useState('left');
+            const [message, setMessage] = useState("ยินดีต้อนรับสู่โหมดคลาสสิก! ช่วยพา หมาป่า แกะ และกะหล่ำปลี ข้ามแม่น้ำที เรือนั่งได้แค่ 1 อย่างนะ");
+            const [emotion, setEmotion] = useState("🧑‍🎓🛶");
+
+            const checkGameStatus = (lBank, rBank, bPos) => {
+                const checkBank = (bank) => {
+                    if (bank.includes('🐺 หมาป่า') && bank.includes('🐑 แกะ')) return "อ๊าก! หมาป่ากินแกะแล้ว! เริ่มใหม่นะ";
+                    if (bank.includes('🐑 แกะ') && bank.includes('🥬 กะหล่ำปลี')) return "แงๆ แกะกินกะหล่ำปลีหมดเลย! เริ่มใหม่นะ";
+                    return null;
+                };
+
+                let failMsg = null;
+                if (bPos === 'right') failMsg = checkBank(lBank);
+                if (bPos === 'left') failMsg = checkBank(rBank);
+
+                if (failMsg) {
+                    setMessage(failMsg); setEmotion("🧑‍🎓😭"); setTimeout(() => resetGame(), 2500);
+                } else if (rBank.length === 3) {
+                    setMessage("ไชโย! ข้ามฝั่งได้ปลอดภัยทุกคนเลย เก่งเรื่องลำดับขั้นตอนจริงๆ รับไปเลย 10 ดาว!"); setEmotion("🧑‍🎓🎉"); setTimeout(onWin, 2500);
+                } else {
+                    setMessage("ปลอดภัยดี! พายเรือต่อไปเลย"); setEmotion("🧑‍🎓👍");
+                }
+            };
+
+            const resetGame = () => {
+                setLeftBank(['🐺 หมาป่า', '🐑 แกะ', '🥬 กะหล่ำปลี']); setRightBank([]); setBoat(null); setBoatPos('left');
+                setMessage("มาลองกันใหม่! ระวังอย่าทิ้งคู่ปรับไว้ด้วยกันนะ"); setEmotion("🧑‍🎓💪");
+            };
+
+            const toggleBoat = (item, bank) => {
+                if (bank !== boatPos) return; 
+                if (boat) return; 
+                if (bank === 'left') setLeftBank(leftBank.filter(i => i !== item));
+                else setRightBank(rightBank.filter(i => i !== item));
+                setBoat(item);
+            };
+
+            const unloadBoat = () => {
+                if (!boat) return;
+                if (boatPos === 'left') setLeftBank([...leftBank, boat]);
+                else setRightBank([...rightBank, boat]);
+                setBoat(null);
+            };
+
+            const moveBoat = () => {
+                const newPos = boatPos === 'left' ? 'right' : 'left';
+                setBoatPos(newPos);
+                checkGameStatus(leftBank, rightBank, newPos);
+            };
+
+            return (
+                <div className="flex flex-col items-center w-full max-w-3xl mx-auto slide-up">
+                    <NTMMascot message={message} emotion={emotion} onHint={() => {
+                        setMessage("คำใบ้: หมาป่าไม่กินกะหล่ำปลีนะ! เราควรพาตัวที่ถูกกินง่ายที่สุดข้ามไปก่อนดีไหม?");
+                        setEmotion("🧑‍🎓💡");
+                    }}/>
+
+                    <div className="w-full bg-blue-100 rounded-3xl p-6 flex items-center justify-between relative shadow-inner overflow-hidden border-4 border-blue-300">
+                        {/* ฝั่งซ้าย */}
+                        <div className="w-1/3 bg-green-400 h-64 rounded-2xl p-4 flex flex-col justify-end space-y-2 border-r-8 border-green-500 shadow-lg">
+                            <h3 className="text-green-900 font-black text-center mb-2">ฝั่งซ้าย</h3>
+                            {leftBank.map(item => (
+                                <button key={item} onClick={() => toggleBoat(item, 'left')} className="bg-white p-2 rounded-xl shadow border-b-4 border-gray-200 hover:bg-gray-50 font-bold truncate transition transform hover:scale-105 active:translate-y-1 active:border-b-0">{item}</button>
+                            ))}
+                        </div>
+
+                        {/* แม่น้ำและเรือ */}
+                        <div className="w-1/3 h-64 flex flex-col items-center justify-center relative">
+                            <div className="w-full h-full absolute bg-blue-400 opacity-40 z-0"></div>
+                            <div className={`z-10 transition-all duration-700 ease-in-out flex flex-col items-center ${boatPos === 'left' ? '-translate-x-10' : 'translate-x-10'}`}>
+                                <div className="text-4xl mb-2 drop-shadow-md">🧑‍🎓</div>
+                                <div onClick={unloadBoat} className="bg-yellow-600 w-24 h-12 rounded-b-full flex items-center justify-center cursor-pointer shadow-lg border-2 border-yellow-800">
+                                    {boat ? <span className="bg-white px-2 py-1 rounded text-sm font-bold shadow">{boat.split(' ')[0]}</span> : <span className="text-yellow-800 text-xs font-bold">ว่าง</span>}
+                                </div>
+                                <button onClick={moveBoat} className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full font-bold shadow-lg animate-bounce border-2 border-blue-800">พายเรือ 🚣</button>
+                            </div>
+                        </div>
+
+                        {/* ฝั่งขวา */}
+                        <div className="w-1/3 bg-green-400 h-64 rounded-2xl p-4 flex flex-col justify-end space-y-2 border-l-8 border-green-500 shadow-lg">
+                            <h3 className="text-green-900 font-black text-center mb-2">ฝั่งขวา</h3>
+                            {rightBank.map(item => (
+                                <button key={item} onClick={() => toggleBoat(item, 'right')} className="bg-white p-2 rounded-xl shadow border-b-4 border-gray-200 hover:bg-gray-50 font-bold truncate transition transform hover:scale-105 active:translate-y-1 active:border-b-0">{item}</button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LevelSelect = ({ zoneName, progress, onSelect, onBack }) => {
+            const [showBossLock, setShowBossLock] = useState(false);
+            const [password, setPassword] = useState("");
+            const [lockMessage, setLockMessage] = useState("รหัสลับประจำฐานคืออะไร? (รหัส: 1234 หรือ NTM)");
+
+            const handleLevelClick = (lvl) => {
+                if (lvl === 20) setShowBossLock(true);
+                else onSelect(lvl);
+            };
+
+            const handleUnlock = () => {
+                const pwd = password.trim().toUpperCase();
+                if (pwd === "1234" || pwd === "NTM") {
+                    setShowBossLock(false); onSelect(20);
+                } else {
+                    setLockMessage("รหัสไม่ถูกต้อง! ลองไปหาตามฐานกิจกรรมดูนะ"); setPassword("");
+                }
+            };
+
+            return (
+                <div className="w-full max-w-4xl mx-auto slide-up text-center relative">
+                    <div className="flex justify-between items-center mb-8 px-2">
+                        <button onClick={onBack} className="bg-white px-4 py-2 rounded-xl shadow-md font-bold text-gray-600 hover:bg-gray-100 transition-transform active:scale-95">⬅️ กลับ</button>
+                        <h2 className="text-xl sm:text-3xl font-bold text-blue-700 bg-white/80 px-4 py-2 rounded-2xl shadow-sm">{zoneName}</h2>
+                        <div className="w-24 hidden sm:block"></div>
+                    </div>
+                    
+                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-3 sm:gap-4 p-4 sm:p-6 bg-white/50 backdrop-blur-sm rounded-3xl border-4 border-white shadow-xl">
+                        {Array.from({ length: 20 }, (_, i) => i + 1).map(lvl => {
+                            const isUnlocked = lvl <= progress;
+                            const isBoss = lvl === 20;
+                            return (
+                                <button key={lvl} onClick={() => isUnlocked && handleLevelClick(lvl)} disabled={!isUnlocked}
+                                    className={`relative aspect-square rounded-2xl flex flex-col items-center justify-center text-2xl sm:text-3xl font-black transition-all border-b-4
+                                    ${isUnlocked ? (lvl < progress ? 'bg-green-400 text-white border-green-600 hover:bg-green-500 hover:-translate-y-1' : isBoss ? 'bg-red-500 text-white border-red-700 hover:bg-red-600 animate-pulse' : 'bg-yellow-400 text-yellow-900 border-yellow-600 hover:bg-yellow-500 animate-pulse hover:-translate-y-1') : 'bg-gray-300 text-gray-500 border-gray-400 opacity-60 cursor-not-allowed'}`}>
+                                    {lvl}
+                                    {lvl < progress && <span className="absolute bottom-1 right-1 text-sm sm:text-base drop-shadow-sm">⭐</span>}
+                                    {!isUnlocked && <span className="absolute text-3xl opacity-30">🔒</span>}
+                                    {(isUnlocked && isBoss && lvl === progress) && <span className="absolute text-3xl opacity-80 drop-shadow-md">👹</span>}
+                                </button>
+                            )
+                        })}
+                    </div>
+
+                    {showBossLock && (
+                        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                            <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full pop-anim border-4 border-red-500 flex flex-col items-center">
+                                <div className="text-6xl mb-4 shake-anim">🔐</div>
+                                <h3 className="text-2xl font-bold text-red-600 mb-2">ด่านบอสถูกล็อก!</h3>
+                                <p className={`text-sm mb-6 text-center font-medium ${lockMessage.includes("ไม่ถูกต้อง") ? 'text-red-500' : 'text-gray-600'}`}>{lockMessage}</p>
+                                <input type="text" value={password} onChange={e => setPassword(e.target.value)} placeholder="ใส่รหัสผ่าน..." className="w-full text-center text-2xl font-bold border-2 border-gray-300 rounded-xl p-3 mb-4 focus:outline-none focus:border-blue-500" />
+                                <div className="flex gap-3 w-full">
+                                    <button onClick={() => setShowBossLock(false)} className="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded-xl hover:bg-gray-300">ยกเลิก</button>
+                                    <button onClick={handleUnlock} className="flex-1 bg-red-500 text-white font-bold py-3 rounded-xl hover:bg-red-600 shadow-md">ปลดล็อก 🔓</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const GachaShop = ({ stars, setStars, inventory, setInventory, onBack }) => {
+            const [message, setMessage] = useState("ตู้สุ่มทายโจ๊ก! ใช้ 3 ดาว ⭐️ สุ่มรับคอสตูมหายาก หรือ ปริศนาคำทายพื้นบ้าน ลองหมุนดูสิ!");
+            const [emotion, setEmotion] = useState("🧑‍🎓✨");
+            const [rolling, setRolling] = useState(false);
+            const [currentReward, setCurrentReward] = useState(null);
+
+            const rewardsPool = [
+                { type: 'costume', name: 'หมวกทรงไทย', icon: '👑' }, { type: 'costume', name: 'แว่นตานักสืบ', icon: '🕶️' },
+                { type: 'costume', name: 'หมวกนักสืบ', icon: '🕵️' }, { type: 'costume', name: 'โบว์สีแดง', icon: '🎀' },
+                { type: 'riddle', q: 'อะไรเอ่ย ต้นเท่าขา ใบวาเดียว?', a: 'ต้นกล้วย', icon: '🍌' },
+                { type: 'riddle', q: 'อะไรเอ่ย สี่ตีนเดินมา หลังคาเหล็ก?', a: 'เต่า', icon: '🐢' },
+                { type: 'riddle', q: 'อะไรเอ่ย สูงระหง ใบลงดิน?', a: 'ต้นมะพร้าว', icon: '🥥' }
+            ];
+
+            const rollGacha = () => {
+                if (stars < 3 || rolling) return;
+                setStars(prev => prev - 3); setRolling(true); setCurrentReward(null);
+                setMessage("กำลังสุ่ม... ลุ้นๆๆ!"); setEmotion("🧑‍🎓🌀");
+                
+                setTimeout(() => {
+                    const reward = rewardsPool[randomInt(0, rewardsPool.length - 1)];
+                    setCurrentReward(reward); setRolling(false);
+                    if(!inventory.some(i => i.name === reward.name || i.q === reward.q)) setInventory(prev => [...prev, reward]);
+                    
+                    if (reward.type === 'costume') { setMessage(`ยินดีด้วย! ได้รับคอสตูม: ${reward.name}`); setEmotion(`🧑‍🎓${reward.icon}`); }
+                    else { setMessage(`โอ้โห! ได้รับปริศนาทายโจ๊ก: "${reward.q}" (เฉลย: ${reward.a})`); setEmotion(`🧑‍🎓💡`); }
+                }, 1500);
+            };
+
+            return (
+                <div className="w-full max-w-2xl mx-auto slide-up">
+                    <div className="flex justify-between items-center mb-4 px-2">
+                        <button onClick={onBack} className="bg-white px-4 py-2 rounded-xl shadow-md font-bold text-gray-600 hover:bg-gray-100 transition-transform active:scale-95">⬅️ กลับแผนที่</button>
+                        <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-xl font-bold border-2 border-yellow-300 shadow-sm flex items-center gap-1">
+                            ⭐️ มีดาว: {stars} ดวง
+                        </div>
+                    </div>
+                    <NTMMascot message={message} emotion={emotion} />
+                    
+                    <div className="bg-white p-8 rounded-3xl shadow-xl border-4 border-purple-300 text-center flex flex-col items-center">
+                        <div className={`text-8xl mb-6 transition-transform ${rolling ? 'shake-anim' : ''}`}>
+                            {currentReward ? currentReward.icon : '🎰'}
+                        </div>
+                        <button onClick={rollGacha} disabled={stars < 3 || rolling} className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xl font-black px-8 py-4 rounded-full shadow-lg hover:scale-105 active:scale-95 disabled:opacity-50 transition-all border-b-4 border-purple-700">
+                            หมุนกาชาปอง (ใช้ ⭐️ 3 ดวง)
+                        </button>
+                    </div>
+
+                    <div className="mt-8 bg-white/80 backdrop-blur p-4 rounded-2xl shadow-sm">
+                        <h3 className="font-bold text-gray-700 mb-3 border-b-2 pb-2">🎒 ของสะสมของฉัน ({inventory.length})</h3>
+                        <div className="flex flex-wrap gap-2">
+                            {inventory.length === 0 ? <p className="text-gray-400 text-sm font-medium">ยังไม่มีของสะสม ลองหมุนกาชาปองดูสิ!</p> : 
+                                inventory.map((item, idx) => (
+                                    <div key={idx} className="bg-white p-2 rounded-lg shadow border border-gray-200 text-center min-w-[80px]" title={item.type==='riddle' ? item.q : item.name}>
+                                        <div className="text-3xl mb-1">{item.icon}</div>
+                                        <div className="text-[10px] text-gray-500 truncate max-w-[80px] font-bold">{item.type==='riddle' ? 'ปริศนาทายโจ๊ก' : item.name}</div>
+                                    </div>
+                                ))
+                            }
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [view, setView] = useState('menu'); 
+            const [activeZone, setActiveZone] = useState(null); 
+            const [activeLevel, setActiveLevel] = useState(1);
+            const [stars, setStars] = useState(15);
+            const [inventory, setInventory] = useState([]);
+            
+            const [progress, setProgress] = useState({ sudokuNum: 1, colorLogic: 1, deduction: 1, pattern: 1, maze: 1, weightLogic: 1 });
+
+            const handleWin = () => {
+                setStars(prev => prev + 3);
+                const nextLevel = activeLevel + 1;
+                if (nextLevel > progress[activeZone] && nextLevel <= 20) {
+                    setProgress(prev => ({ ...prev, [activeZone]: nextLevel }));
+                }
+                if (activeLevel === 20) setView('zone_clear'); else setView('levels');
+            };
+
+            const renderGame = () => {
+                switch(activeZone) {
+                    case 'sudokuNum': return <GridGame level={activeLevel} isColorGame={false} onWin={handleWin} />;
+                    case 'colorLogic': return <GridGame level={activeLevel} isColorGame={true} onWin={handleWin} />;
+                    case 'deduction': return <DeductionGame level={activeLevel} onWin={handleWin} />;
+                    case 'pattern': return <PatternGame level={activeLevel} onWin={handleWin} />;
+                    case 'maze': return <MazeGame level={activeLevel} onWin={handleWin} />;
+                    case 'weightLogic': return <WeightGame level={activeLevel} onWin={handleWin} />;
+                    default: return null;
+                }
+            };
+
+            const getZoneName = (zone) => ({ sudokuNum: 'ซูโดกุตัวเลข', colorLogic: 'ตารางสีปริศนา', deduction: 'ยอดนักสืบหาคนร้าย', pattern: 'อนุกรมภาพตรรกะ', maze: 'เขาวงกตนักเดินทาง', weightLogic: 'เครื่องชั่งตรรกะ' })[zone];
+
+            return (
+                <div className="min-h-screen p-4 sm:p-6 flex flex-col items-center overflow-x-hidden relative">
+                    <div className="w-full max-w-5xl flex justify-between items-center mb-6 px-4">
+                        <div className="font-black text-xl sm:text-2xl text-blue-700 bg-white/70 px-3 py-1 rounded-lg backdrop-blur-sm border-2 border-white shadow-sm">🧑‍🎓 NTM Detective</div>
+                        {view !== 'menu' && (
+                            <div className="bg-yellow-400 text-yellow-900 px-4 py-1.5 rounded-full font-black shadow-sm flex items-center gap-1 border-2 border-yellow-500">
+                                ⭐ {stars}
+                            </div>
+                        )}
+                    </div>
+
+                    {view === 'game' && (
+                        <div className="w-full max-w-4xl flex justify-between items-center mb-4 bg-white/50 p-2 rounded-2xl backdrop-blur-sm">
+                            <button onClick={() => setView('levels')} className="bg-white px-4 py-2 rounded-xl shadow font-bold text-gray-600 hover:bg-gray-100 transition-transform active:scale-95 text-sm sm:text-base border-b-2 border-gray-200">⬅️ ออก</button>
+                            <div className="text-blue-800 px-4 py-2 font-black text-sm sm:text-lg text-center flex-1">{getZoneName(activeZone)} | ด่าน {activeLevel}</div>
+                        </div>
+                    )}
+                    
+                    {view === 'river_crossing' && (
+                        <div className="w-full max-w-4xl flex justify-between items-center mb-4 bg-white/50 p-2 rounded-2xl backdrop-blur-sm">
+                            <button onClick={() => setView('map')} className="bg-white px-4 py-2 rounded-xl shadow font-bold text-gray-600 hover:bg-gray-100 transition-transform active:scale-95 text-sm sm:text-base border-b-2 border-gray-200">⬅️ ออก</button>
+                            <div className="text-amber-700 px-4 py-2 font-black text-sm sm:text-lg text-center flex-1">โหมดคลาสสิก: ปริศนาข้ามแม่น้ำ</div>
+                        </div>
+                    )}
+
+                    {view === 'menu' && (
+                        <div className="text-center pop-anim bg-white p-8 sm:p-12 rounded-3xl shadow-2xl max-w-xl w-full border-4 border-yellow-400 relative overflow-hidden">
+                            <div className="absolute top-0 left-0 w-full h-4 bg-blue-500"></div>
+                            <div className="text-8xl sm:text-9xl mb-6 bounce-anim mt-4 drop-shadow-md">🕵️‍♂️</div>
+                            <h2 className="text-3xl sm:text-4xl font-black text-gray-800 mb-2">ภารกิจนักสืบจิ๋ว</h2>
+                            <p className="text-gray-500 mb-8 text-base sm:text-lg font-medium">เกาะปริศนา 5 โซน 100 ด่าน!<br/>พร้อมโหมดคลาสสิกข้ามแม่น้ำ</p>
+                            <button onClick={() => setView('map')} className="w-full bg-green-500 hover:bg-green-600 text-white text-xl sm:text-2xl font-black py-4 px-12 rounded-2xl shadow-lg transition transform hover:scale-105 active:scale-95 border-b-4 border-green-700">
+                                ลุยเลย! 🚀
+                            </button>
+                        </div>
+                    )}
+
+                    {view === 'map' && (
+                        <div className="text-center slide-up w-full max-w-5xl">
+                            <div className="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 px-4">
+                                <h2 className="text-2xl sm:text-4xl font-black text-gray-800 drop-shadow-sm">📍 แผนที่เกาะปริศนา</h2>
+                                <div className="flex gap-2">
+                                    <button onClick={() => setView('river_crossing')} className="bg-amber-500 hover:bg-amber-600 text-white px-4 sm:px-6 py-2 rounded-full font-bold shadow-md hover:scale-105 transition-transform flex items-center gap-2 border-b-4 border-amber-700">
+                                        <span>🛶</span> ข้ามแม่น้ำ
+                                    </button>
+                                    <button onClick={() => setView('gacha')} className="bg-purple-500 hover:bg-purple-600 text-white px-4 sm:px-6 py-2 rounded-full font-bold shadow-md hover:scale-105 transition-transform flex items-center gap-2 border-b-4 border-purple-700">
+                                        <span>🎰</span> กาชาปอง
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 px-4">
+                                {[
+                                    { id: 'sudokuNum', icon: '🔢', title: 'ซูโดกุตัวเลข', color: 'blue' },
+                                    { id: 'colorLogic', icon: '🎨', title: 'ตารางสีปริศนา', color: 'orange' },
+                                    { id: 'deduction', icon: '🔎', title: 'สืบหาคนร้าย', color: 'purple' },
+                                    { id: 'pattern', icon: '🧩', title: 'อนุกรมภาพ', color: 'pink' },
+                                    { id: 'weightLogic', icon: '⚖️', title: 'เครื่องชั่งตรรกะ', color: 'teal' },
+                                    { id: 'maze', icon: '🗺️', title: 'เขาวงกต (อัลกอริทึม)', color: 'emerald' }
+                                ].map(z => (
+                                    <div key={z.id} onClick={() => { setActiveZone(z.id); setView('levels'); }} className={`bg-white p-6 rounded-3xl shadow-lg border-4 border-${z.color}-300 cursor-pointer hover:-translate-y-2 hover:shadow-xl transition-all flex flex-col items-center group relative overflow-hidden`}>
+                                        <div className={`absolute -right-6 -top-6 w-24 h-24 bg-${z.color}-100 rounded-full z-0 group-hover:scale-150 transition-transform duration-500`}></div>
+                                        <div className="text-6xl mb-4 group-hover:bounce-anim z-10 drop-shadow-md">{z.icon}</div>
+                                        <h3 className={`text-xl font-black text-${z.color}-800 mb-4 z-10`}>{z.title}</h3>
+                                        <div className="w-full bg-gray-100 rounded-full h-3 z-10 overflow-hidden">
+                                            <div className={`bg-${z.color}-500 h-full rounded-full transition-all duration-1000`} style={{width: `${(progress[z.id]/20)*100}%`}}></div>
+                                        </div>
+                                        <span className="text-xs font-bold mt-2 text-gray-400 z-10">{Math.min(progress[z.id], 20)}/20 ด่าน</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {view === 'levels' && <LevelSelect zoneName={`โซน: ${getZoneName(activeZone)}`} progress={progress[activeZone]} onSelect={(lvl) => { setActiveLevel(lvl); setView('game'); }} onBack={() => setView('map')} />}
+                    {view === 'gacha' && <GachaShop stars={stars} setStars={setStars} inventory={inventory} setInventory={setInventory} onBack={() => setView('map')} />}
+                    {view === 'game' && renderGame()}
+                    {view === 'river_crossing' && <RiverCrossingGame onWin={() => { setStars(s => s + 10); setView('zone_clear_river'); }} />}
+
+                    {view === 'zone_clear' && (
+                        <div className="text-center pop-anim bg-white p-10 rounded-3xl shadow-2xl max-w-lg w-full border-4 border-yellow-400 mt-10">
+                            <div className="text-8xl mb-6 bounce-anim">🏆🎉</div>
+                            <h2 className="text-3xl font-extrabold text-green-600 mb-4">พิชิตบอสสำเร็จ!</h2>
+                            <p className="text-gray-700 text-lg mb-8 font-medium">คุณไขปริศนาโซนนี้ครบ 20 ด่านแล้ว สุดยอดอัจฉริยะนักสืบจิ๋ว!</p>
+                            <button onClick={() => setView('map')} className="bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold py-4 px-10 rounded-2xl shadow-lg transition transform hover:scale-105 active:scale-95 w-full border-b-4 border-blue-700">
+                                กลับไปแผนที่หลัก 🗺️
+                            </button>
+                        </div>
+                    )}
+
+                    {view === 'zone_clear_river' && (
+                        <div className="text-center pop-anim bg-white p-10 rounded-3xl shadow-2xl max-w-lg w-full border-4 border-amber-400 mt-10">
+                            <div className="text-8xl mb-6 bounce-anim">🛶🌟</div>
+                            <h2 className="text-3xl font-extrabold text-amber-600 mb-4">เคลียร์โหมดคลาสสิก!</h2>
+                            <p className="text-gray-700 text-lg mb-8 font-medium">พาสัตว์ข้ามแม่น้ำสำเร็จทั้งหมด! รับดาวโบนัส 10 ดวง ไปสุ่มกาชาปองกันเลย</p>
+                            <button onClick={() => setView('map')} className="bg-amber-500 hover:bg-amber-600 text-white text-xl font-bold py-4 px-10 rounded-2xl shadow-lg transition transform hover:scale-105 active:scale-95 w-full border-b-4 border-amber-700">
+                                กลับไปแผนที่หลัก 🗺️
+                            </button>
+                        </div>
+                    )}
+
+                    {/* เครดิตผู้สร้าง (แก้ไขชื่อได้ที่นี่) */}
+                    <div className="mt-auto pt-12 pb-4 text-center w-full">
+                        <p className="text-gray-400 text-xs sm:text-sm font-semibold tracking-wide">
+                            สร้างสรรค์และพัฒนาโดย : NTM
+                        </p>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
